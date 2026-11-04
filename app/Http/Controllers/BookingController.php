@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\StoreBookingRequest;
 use App\Models\Booking;
 use App\Models\Room;
 use Carbon\Carbon;
@@ -18,23 +19,12 @@ class BookingController extends Controller
             ->paginate(20);
     }
 
-    public function store(Request $request)
+    public function store(StoreBookingRequest $request)
     {
-        $conflict = DB::select("SELECT id FROM bookings
-            WHERE room_id = {$request->room_id}
-            AND starts_at <= '{$request->ends_at}'
-            AND ends_at >= '{$request->starts_at}'");
+        $data = $request->validated();
+        $data['user_id'] = $request->user()->getKey();
 
-        if ($conflict) {
-            return response()->json(['error' => 'Комната занята'], 409);
-        }
-
-        $start = Carbon::parse($request->starts_at);
-        if ($start->hour < 9 || $start->hour >= 20) {
-            return response()->json(['error' => 'Нерабочее время'], 422);
-        }
-
-        $booking = Booking::create($request->all());
+        $booking = Booking::create($data);
 
         Log::withContext(['booking_id' => $booking->id]);
         Log::channel('bookings')->info('Booking created');
