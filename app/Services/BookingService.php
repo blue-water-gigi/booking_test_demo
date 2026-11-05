@@ -10,7 +10,9 @@ use Throwable;
 
 class BookingService
 {
-    public function __construct(private BookingGuard $bookingGuard) {}
+    public function __construct(private BookingGuard $bookingGuard)
+    {
+    }
 
     /** @param array{
      *     room_id: int,
@@ -24,7 +26,7 @@ class BookingService
     public function create(array $data, int $userId): Booking
     {
         return DB::transaction(function () use ($data, $userId) {
-            $room = Room::whereKey((int) $data['room_id'])
+            $room = Room::whereKey((int)$data['room_id'])
                 ->lockForUpdate()
                 ->firstOrFail();
 
