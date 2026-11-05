@@ -27,55 +27,58 @@ class StoreBookingRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'room_id' => ['required', 'int', Rule::exists('rooms', 'id')],
+            'room_id' => ['required', 'integer', Rule::exists('rooms', 'id')],
             'title' => ['required', 'string', 'max:255'],
-            'starts_at' => ['required', 'date', Rule::regex($this->iso8601Regex())],
-            'ends_at' => ['required', 'string', Rule::regex($this->iso8601Regex()), 'after:starts_at'],
+            'starts_at' => ['required', 'string', 'regex:'.$this->iso8601Regex()],
+            'ends_at' => ['required', 'string', 'regex:'.$this->iso8601Regex(), 'after:starts_at'],
         ];
     }
 
     public function withValidator(Validator $validator): void
     {
-        $validator->after(function (Validator $validator) {
-            if (!$this->filled(['room_id', 'starts_at', 'ends_at'])) {
+        $validator->after(function (Validator $validator): void {
+            if (! $this->filled(['room_id', 'starts_at', 'ends_at'])) {
                 return;
             }
 
-            $room = Room::find($this->room_id);
+            $room = Room::with('office')->find($this->input('room_id'));
 
-            if (!$room) {
+            if (! $room || ! $room->office) {
                 return;
             }
 
-            $officeTz = $room->office?->timezone ?? config('app.timezone');
+            $timezone = $room->office->timezone;
 
             try {
-                $start = Carbon::parse($this->starts_at)->setTimezone($officeTz);
-                $end = Carbon::parse($this->ends_at)->setTimezone($officeTz);
-            } catch (\Throwable $th) {
-                $validator->errors()->add('starts_at', 'Некорректный формат даты. Используй ISO 8601 с часовым поясом');
-                $validator->errors()->add('ends_at', 'Некорректный формат даты. Используй ISO 8601 с часовым поясом');
+                $start = Carbon::parse($this->input('starts_at'))->setTimezone($timezone);
+                $end = Carbon::parse($this->input('ends_at'))->setTimezone($timezone);
+            } catch (\Throwable) {
+                $validator->errors()->add('starts_at', 'Некорректный формат даты. Используй ISO 8601 с часовым поясом.');
+                $validator->errors()->add('ends_at', 'Некорректный формат даты. Используй ISO 8601 с часовым поясом.');
+
                 return;
             }
 
-            //check if we are in the working date of certain office
-            if ($start->toDateString() !== $end->toDateString()) {
-                $validator->errors()->add('starts_at', 'Бронь не находится в пределах рабочего дня офиса');
-                $validator->errors()->add('ends_at', 'Бронь не находится в пределах рабочего дня офиса');
+            $dayStart = $start->copy()->startOfDay()->setTime(9, 0, 0);
+            $dayEnd = $start->copy()->startOfDay()->setTime(20, 0, 0);
+
+            if (! $start->isSameDay($end) || $start->lt($dayStart) || $end->gt($dayEnd)) {
+                $validator->errors()->add('starts_at', 'Бронь должна полностью входить в рабочее время офиса: 09:00–20:00 по местному времени.');
+                $validator->errors()->add('ends_at', 'Бронь должна полностью входить в рабочее время офиса: 09:00–20:00 по местному времени.');
+
                 return;
             }
 
-            $duration = $start->diffInMinutes($end);
+            $durationMinutes = (int) $start->diffInMinutes($end, false);
 
-            //check step
-            if ($duration < 15 || $duration > 240 || $duration % 15 !== 0) {
+            if ($durationMinutes < 15 || $durationMinutes > 240 || $durationMinutes % 15 !== 0) {
                 $validator->errors()->add(
                     'starts_at',
-                    'Длительность брони должна быть от 15 до 240 минут и кратна 15 минутам'
+                    'Длительность брони должна быть от 15 до 240 минут и кратна 15 минутам.'
                 );
                 $validator->errors()->add(
                     'ends_at',
-                    'Длительность брони должна быть от 15 до 240 минут и кратна 15 минутам'
+                    'Длительность брони должна быть от 15 до 240 минут и кратна 15 минутам.'
                 );
             }
         });
@@ -83,6 +86,6 @@ class StoreBookingRequest extends FormRequest
 
     private function iso8601Regex(): string
     {
-        return '/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/';
+        return '/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})$/';
     }
 }

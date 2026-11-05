@@ -5,17 +5,16 @@ namespace App\Http\Controllers;
 use App\Http\Requests\StoreBookingRequest;
 use App\Models\Booking;
 use App\Models\Room;
-use Carbon\Carbon;
-use HttpResponseException;
+use App\Services\BookingService;
+use Gate;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Http\Response;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 use Throwable;
 
 class BookingController extends Controller
 {
+    public function __construct(private readonly BookingService $bookingService) {}
+
     public function index(Request $request)
     {
         return Booking::where('user_id', $request->user()->id)
@@ -30,58 +29,12 @@ class BookingController extends Controller
     {
         $data = $request->validated();
 
-        return DB::transaction(function () use ($data, $request) {
-            $room = Room::whereKey((int)$data['room_id'])
-                ->lockForUpdate()
-                ->firstOrFail();
-
-            $startUtc = Carbon::parse($data['starts_at'])
-                ->setTimezone($room->office->timezone)
-                ->copy()
-                ->utc()
-                ->format('Y-m-d H:i:s');
-
-            $endUtc = Carbon::parse($data['starts_at'])
-                ->setTimezone($room->office->timezone)
-                ->copy()
-                ->utc()
-                ->format('Y-m-d H:i:s');
-
-            $conflict = Booking::where('room_id', $room->getKey())
-                ->where('starts_at', '<', $endUtc)
-                ->where('ends_at', '>', $startUtc)
-                ->exists();
-
-            if ($conflict) {
-                throw new HttpResponseException(
-                    response()->json(['error' => 'Комната занята'], 409)
-                );
-            }
-
-            $model = Booking::create([
-                'room_id' => $room->getKey(),
-                'user_id' => $request->user()->getKey(),
-                'title' => $data['title'],
-                'starts_at' => $startUtc,
-                'ends_at' => $endUtc,
-            ]);
-
-            Log::withContext(['booking_id' => $model->id]);
-            Log::channel('bookings')->info('Booking created');
-
-            return $model->load(['room.office', 'user']);
-        });
+        return $this->bookingService->create($data, (int) $request->user()->getKey());
     }
 
-    public function destroy(Request $request, $id): JsonResponse
+    public function destroy(Booking $booking): JsonResponse
     {
-        $booking = Booking::findOrFail($id);
-
-        if ($booking->user_id !== $request->user()->getKey()) {
-            return response()->json([
-                'error' => 'Отменить бронь может только её автор'
-            ], 403);
-        }
+        Gate::authorize('delete', $booking);
 
         $booking->delete();
 
@@ -93,8 +46,8 @@ class BookingController extends Controller
         return $room->bookings()
             ->whereDate('starts_at', today())
             ->get()
-            ->map(fn($b) => [
-                'time' => $b->starts_at . ' – ' . $b->ends_at,
+            ->map(fn ($b) => [
+                'time' => $b->starts_at.' – '.$b->ends_at,
                 'author' => $b->user->name,
             ]);
     }
