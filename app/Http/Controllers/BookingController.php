@@ -30,40 +30,47 @@ class BookingController extends Controller
     {
         $data = $request->validated();
 
-        $room = Room::with('office')->findOrFail($data['room_id']);
+        return DB::transaction(function () use ($data, $request) {
+            $room = Room::whereKey((int)$data['room_id'])
+                ->lockForUpdate()
+                ->firstOrFail();
 
-        $startLocal = Carbon::parse($data['starts_at'])->setTimezone($room->office->timezone);
-        $endLocal = Carbon::parse($data['starts_at'])->setTimezone($room->office->timezone);
+            $startUtc = Carbon::parse($data['starts_at'])
+                ->setTimezone($room->office->timezone)
+                ->copy()
+                ->utc()
+                ->format('Y-m-d H:i:s');
 
-        $startUtc = $startLocal->copy()->utc()->format('Y-m-d H:i:s');
-        $endUtc = $endLocal->copy()->utc()->format('Y-m-d H:i:s');
+            $endUtc = Carbon::parse($data['starts_at'])
+                ->setTimezone($room->office->timezone)
+                ->copy()
+                ->utc()
+                ->format('Y-m-d H:i:s');
 
-        $conflict = DB::transaction(function () use ($room, $startUtc, $endUtc, $data, $request) {
-            $bookingExists = Booking::where('room_id', $room->id)
+            $conflict = Booking::where('room_id', $room->getKey())
                 ->where('starts_at', '<', $endUtc)
                 ->where('ends_at', '>', $startUtc)
                 ->exists();
 
-            if ($bookingExists) {
+            if ($conflict) {
                 throw new HttpResponseException(
                     response()->json(['error' => 'Комната занята'], 409)
                 );
             }
-            $booking = Booking::create([
-                'room_id' => $room->id,
+
+            $model = Booking::create([
+                'room_id' => $room->getKey(),
                 'user_id' => $request->user()->getKey(),
                 'title' => $data['title'],
                 'starts_at' => $startUtc,
                 'ends_at' => $endUtc,
             ]);
 
-            Log::withContext(['booking_id' => $booking->id]);
+            Log::withContext(['booking_id' => $model->id]);
             Log::channel('bookings')->info('Booking created');
 
-            return $booking;
+            return $model->load(['room.office', 'user']);
         });
-
-        return $conflict->load('room.office', 'user');
     }
 
     public function destroy(Request $request, $id): JsonResponse
