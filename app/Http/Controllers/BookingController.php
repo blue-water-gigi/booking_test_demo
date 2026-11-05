@@ -13,7 +13,9 @@ use Throwable;
 
 class BookingController extends Controller
 {
-    public function __construct(private readonly BookingService $bookingService) {}
+    public function __construct(private readonly BookingService $bookingService)
+    {
+    }
 
     public function index(Request $request)
     {
@@ -29,7 +31,9 @@ class BookingController extends Controller
     {
         $data = $request->validated();
 
-        return $this->bookingService->create($data, (int) $request->user()->getKey());
+        return response()->json(
+            $this->bookingService->create($data, (int)$request->user()->getKey())
+        );
     }
 
     public function destroy(Booking $booking): JsonResponse
@@ -46,8 +50,8 @@ class BookingController extends Controller
         return $room->bookings()
             ->whereDate('starts_at', today())
             ->get()
-            ->map(fn ($b) => [
-                'time' => $b->starts_at.' – '.$b->ends_at,
+            ->map(fn($b) => [
+                'time' => $b->starts_at . ' – ' . $b->ends_at,
                 'author' => $b->user->name,
             ]);
     }

@@ -29,21 +29,21 @@ class StoreBookingRequest extends FormRequest
         return [
             'room_id' => ['required', 'integer', Rule::exists('rooms', 'id')],
             'title' => ['required', 'string', 'max:255'],
-            'starts_at' => ['required', 'string', 'regex:'.$this->iso8601Regex()],
-            'ends_at' => ['required', 'string', 'regex:'.$this->iso8601Regex(), 'after:starts_at'],
+            'starts_at' => ['required', 'string', 'regex:' . $this->iso8601Regex()],
+            'ends_at' => ['required', 'string', 'regex:' . $this->iso8601Regex(), 'after:starts_at'],
         ];
     }
 
     public function withValidator(Validator $validator): void
     {
         $validator->after(function (Validator $validator): void {
-            if (! $this->filled(['room_id', 'starts_at', 'ends_at'])) {
+            if (!$this->filled(['room_id', 'starts_at', 'ends_at'])) {
                 return;
             }
 
             $room = Room::with('office')->find($this->input('room_id'));
 
-            if (! $room || ! $room->office) {
+            if (!$room || !$room->office) {
                 return;
             }
 
@@ -62,14 +62,14 @@ class StoreBookingRequest extends FormRequest
             $dayStart = $start->copy()->startOfDay()->setTime(9, 0, 0);
             $dayEnd = $start->copy()->startOfDay()->setTime(20, 0, 0);
 
-            if (! $start->isSameDay($end) || $start->lt($dayStart) || $end->gt($dayEnd)) {
+            if (!$start->isSameDay($end) || $start->lt($dayStart) || $end->gt($dayEnd)) {
                 $validator->errors()->add('starts_at', 'Бронь должна полностью входить в рабочее время офиса: 09:00–20:00 по местному времени.');
                 $validator->errors()->add('ends_at', 'Бронь должна полностью входить в рабочее время офиса: 09:00–20:00 по местному времени.');
 
                 return;
             }
 
-            $durationMinutes = (int) $start->diffInMinutes($end, false);
+            $durationMinutes = (int)$start->diffInMinutes($end, false);
 
             if ($durationMinutes < 15 || $durationMinutes > 240 || $durationMinutes % 15 !== 0) {
                 $validator->errors()->add(

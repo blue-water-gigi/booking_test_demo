@@ -4,7 +4,7 @@ namespace App\Services;
 
 use App\Models\Booking;
 use Carbon\Carbon;
-use HttpResponseException;
+use Illuminate\Http\Exceptions\HttpResponseException;
 
 class BookingGuard
 {
